@@ -1,0 +1,133 @@
+
+Open In Colab
+[실습 13-2] 빔 탐색 구현하기
+실습명: 빔 탐색 구현해보기
+실습 목적
+Python을 활용해서 빔 탐색(Beam Search)이 어떻게 진행되는지 알아보기
+빔 탐색은 대부분의 디코딩 전략에서 가장 기본이 되는 형태로, 그 원리와 계산 방법을 이해하는 것이 목표
+관련 장(챕터): 13.5.2 빔 탐색
+출처: 『자연어처리 바이블 -ChatGPT 핵심기술』 실습 [13-2] (휴먼싸이언스, 2023)
+이 노트북의 셀 중 (추가) 표시가 있는 셀은 교재 코드의 동작을 이해하기 위해 덧붙인 보충 실습입니다.
+
+1. 필요한 패키지 로드하기
+# 필요한 패키지 로드하기
+from math import log
+import numpy as np
+2. 빔 탐색 함수
+sequences: 현재까지 유지 중인 빔 목록. 각 원소는 [토큰 시퀀스, 점수]
+매 시점(row)마다 모든 빔 × 모든 어휘 조합으로 후보를 만들고 점수를 갱신
+점수는 이전 점수 × (−log p) 로 계산 → 값이 작을수록 좋은 후보이므로 오름차순 정렬
+정렬된 후보 중 상위 beam_size(K)개만 다음 시점으로 넘김
+# 빔 탐색 진행
+def beam_search(input, beam_size):
+    sequences = [[list(), 1.0]]
+    for row in input:
+        all_candidates = list()
+        # 이전 시점까지의 결과를 담아내고 있음
+        for i in range(len(sequences)):
+            seq, score = sequences[i]
+            for j in range(len(row)):
+                # 음의 로그를 곱해주는 형태로 스코어 변화
+                candidate = [seq + [j], score * -log(row[j])]
+                all_candidates.append(candidate)
+        # 빔 점수에 대해서 오름차순 정렬
+        ordered = sorted(all_candidates, key=lambda tup: tup[1])
+        # 빔 크기 K만큼만 참조
+        sequences = ordered[:beam_size]
+    return sequences
+3. 입력 데이터로 빔 탐색 실행
+어휘 사전 크기 5, 시퀀스 길이 5인 확률 분포를 직접 만들어 사용합니다. data[t][j] 는 t번째 시점에 j번 단어가 나올 확률입니다.
+
+# 단어 사전 5개로 구성한 5개의 시퀀스
+data = [[0.2, 0.1, 0.3, 0.4, 0.5],
+        [0.5, 0.3, 0.1, 0.2, 0.4],
+        [0.1, 0.2, 0.3, 0.5, 0.2],
+        [0.1, 0.2, 0.5, 0.4, 0.2],
+        [0.5, 0.4, 0.3, 0.2, 0.1]]
+input_sequences = np.array(data)
+results = beam_search(input_sequences, 5)
+for seq in results:
+    print(seq)
+[[4, 0, 3, 2, 0], 0.1600026977571413]
+[[4, 4, 3, 2, 0], 0.21151206142293622]
+[[3, 0, 3, 2, 0], 0.21151206142293622]
+[[4, 0, 3, 2, 1], 0.21151206142293624]
+[[4, 0, 3, 3, 0], 0.21151206142293624]
+4. (추가) 시점별로 빔이 어떻게 바뀌는지 확인하기
+교재의 beam_search 와 같은 계산을 하면서, 각 시점에 남는 K개의 빔을 출력합니다.
+
+def beam_search_verbose(input, beam_size):
+    sequences = [[list(), 1.0]]
+    for t, row in enumerate(input, start=1):
+        all_candidates = [[seq + [j], score * -log(row[j])]
+                          for seq, score in sequences
+                          for j in range(len(row))]
+        sequences = sorted(all_candidates, key=lambda tup: tup[1])[:beam_size]
+        print(f't={t}  후보 {len(all_candidates)}개 → 상위 {beam_size}개 유지')
+        for seq, score in sequences:
+            print(f'    {seq}  score={score:.4f}')
+    return sequences
+
+_ = beam_search_verbose(input_sequences, 5)
+t=1  후보 5개 → 상위 5개 유지
+    [4]  score=0.6931
+    [3]  score=0.9163
+    [2]  score=1.2040
+    [0]  score=1.6094
+    [1]  score=2.3026
+t=2  후보 25개 → 상위 5개 유지
+    [4, 0]  score=0.4805
+    [4, 4]  score=0.6351
+    [3, 0]  score=0.6351
+    [4, 1]  score=0.8345
+    [2, 0]  score=0.8345
+t=3  후보 25개 → 상위 5개 유지
+    [4, 0, 3]  score=0.3330
+    [4, 4, 3]  score=0.4402
+    [3, 0, 3]  score=0.4402
+    [4, 0, 2]  score=0.5785
+    [4, 1, 3]  score=0.5785
+t=4  후보 25개 → 상위 5개 유지
+    [4, 0, 3, 2]  score=0.2308
+    [4, 4, 3, 2]  score=0.3051
+    [3, 0, 3, 2]  score=0.3051
+    [4, 0, 3, 3]  score=0.3051
+    [4, 0, 2, 2]  score=0.4010
+t=5  후보 25개 → 상위 5개 유지
+    [4, 0, 3, 2, 0]  score=0.1600
+    [4, 4, 3, 2, 0]  score=0.2115
+    [3, 0, 3, 2, 0]  score=0.2115
+    [4, 0, 3, 2, 1]  score=0.2115
+    [4, 0, 3, 3, 0]  score=0.2115
+5. (추가) 비교: 로그 확률의 합 / 그리디 탐색
+일반적인 구현에서는 확률의 곱이 너무 작아지는 것을 막기 위해 음의 로그 확률을 더한 값(= −log 결합확률)을 빔 점수로 사용합니다. 또한 빔 크기를 1로 두면 매 시점 최댓값만 고르는 그리디 탐색과 같아집니다.
+
+# 음의 로그 확률의 합으로 점수 계산 (작을수록 좋음)
+def beam_search_logsum(input, beam_size):
+    sequences = [[list(), 0.0]]
+    for row in input:
+        all_candidates = [[seq + [j], score - log(row[j])]
+                          for seq, score in sequences
+                          for j in range(len(row))]
+        sequences = sorted(all_candidates, key=lambda tup: tup[1])[:beam_size]
+    return sequences
+
+print('[로그 확률 합 기반 빔 탐색, K=5]')
+for seq, score in beam_search_logsum(input_sequences, 5):
+    print(f'  {seq}  -log P = {score:.4f}  (P = {np.exp(-score):.5f})')
+
+print('\n[그리디 탐색 = 빔 크기 1]')
+print(' ', beam_search_logsum(input_sequences, 1)[0][0])
+[로그 확률 합 기반 빔 탐색, K=5]
+  [4, 0, 3, 2, 0]  -log P = 3.4657  (P = 0.03125)
+  [4, 0, 3, 2, 1]  -log P = 3.6889  (P = 0.02500)
+  [4, 0, 3, 3, 0]  -log P = 3.6889  (P = 0.02500)
+  [4, 4, 3, 2, 0]  -log P = 3.6889  (P = 0.02500)
+  [3, 0, 3, 2, 0]  -log P = 3.6889  (P = 0.02500)
+
+[그리디 탐색 = 빔 크기 1]
+  [4, 0, 3, 2, 0]
+6. 생각해 볼 문제
+beam_size 를 1, 2, 3으로 바꿔 실행해 보고 결과가 어떻게 달라지는지 비교해 보세요.
+교재 코드(음의 로그를 곱함)와 5번 셀(음의 로그를 더함)의 순위가 달라지는 경우가 있을지 data 를 바꿔 실험해 보세요.
+시퀀스가 길어질수록 빔 점수에 어떤 문제가 생기며, 13.5.4절의 Length Penalty가 왜 필요한지 설명해 보세요.
